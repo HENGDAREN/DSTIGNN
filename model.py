@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import Conv2d, Parameter
 import torch.nn.functional as F
-#这个是师兄的动态图学习方式
+
 from graph_constuct_fgwn_2 import graph_constructor,graph_constructor2
 from RevIN import RevIN
 
@@ -57,88 +57,6 @@ class Diffusion_GCN(nn.Module):
 ######
 
 
-# def nconv(x, A):
-#     return torch.einsum('bcnt,nm->bcmt', (x, A)).contiguous()
-#
-# class Diffusion_GCN(nn.Module):
-#     def __init__(self, c_in, c_out, dropout, support_len=2, order=1):
-#         super().__init__()
-#         c_in = (order * support_len + 1) * c_in
-#         self.conv = Conv2d(c_in, c_out, (1, 1), padding=(
-#             0, 0), stride=(1, 1), bias=True)
-#         self.dropout = dropout
-#         self.order = order
-#
-#     def forward(self, x, support: list):
-#         out = [x]
-#         for a in support:
-#             x1 = nconv(x, a)
-#             out.append(x1)
-#             for k in range(2, self.order + 1):
-#                 x2 = nconv(x1, a)
-#                 out.append(x2)
-#                 x1 = x2
-#         h = torch.cat(out, dim=1)
-#         h = self.conv(h)
-#         h = F.dropout(h, self.dropout, training=self.training)
-#         return h
-#
-    
-# def sample_gumbel(device, shape, eps=1e-20):
-#     U = torch.rand(shape).to(device)
-#     return -torch.autograd.Variable(torch.log(-torch.log(U + eps) + eps))
-
-
-# def gumbel_softmax_sample(device, logits, temperature,  eps=1e-10):
-#     sample = sample_gumbel(device, logits.size(), eps=eps)
-#     y = logits + sample
-#     return F.softmax(y / temperature, dim=-1)
-
-
-# def gumbel_softmax(device, logits, temperature, hard=False, eps=1e-10):
-#     y_soft = gumbel_softmax_sample(
-#         device, logits, temperature=temperature, eps=eps)
-#     if hard:
-#         shape = logits.size()
-#         _, k = y_soft.data.max(-1)
-#         y_hard = torch.zeros(*shape).to(device)
-#         y_hard = y_hard.zero_().scatter_(-1, k.view(shape[:-1] + (1,)), 1.0)
-#         y = torch.autograd.Variable(y_hard - y_soft.data) + y_soft
-#     else:
-#         y = y_soft
-#     return y
-
-
-# class Graph_Generator(nn.Module):
-#     def __init__(self, device, channels, num_nodes, dropout=0.3):
-#         super().__init__()
-#         self.dropout = dropout
-#         self.node = num_nodes
-#         self.device = device
-#         self.fc0 = nn.Linear(channels, num_nodes)
-#         self.fc1 = nn.Linear(num_nodes, 2*num_nodes)
-#         self.fc2 = nn.Linear(2*num_nodes, num_nodes)
-#         self.diffusion_conv = Diffusion_GCN(channels, channels, dropout, support_len=1)
-#
-#     def forward(self, x, adj):
-#         x = self.diffusion_conv(x, [adj])  #64 64 170 6
-#         x = x.sum(0)  #64 170 6
-#         x = x.sum(2)  #64 170
-#         x = x.permute(1, 0)
-#         x = self.fc0(x)
-#         x = torch.tanh(x)
-#         x = self.fc1(x)
-#         x = torch.tanh(x)
-#         x = self.fc2(x)
-#         x = torch.tanh(x)
-#         x = F.dropout(x, self.dropout, training=self.training)
-#         x = torch.log(F.softmax(x, dim=-1))
-#         x = gumbel_softmax(self.device, x, temperature=0.5, hard=True)
-#         mask = torch.eye(x.shape[0], x.shape[0]).bool().to(device=self.device)
-#         x.masked_fill_(mask, 0)
-#         return x
-
-
 class Splitting(nn.Module):
     def __init__(self):
         super(Splitting, self).__init__()
@@ -175,11 +93,6 @@ class IDGCN(nn.Module):
         apt_size = 10
         aptinit = pre_adj[0]
         self.pre_adj_len = 1
-        # self.nodevec1 = nn.Parameter(torch.randn(num_nodes, apt_size), requires_grad=True)
-        # self.nodevec2 = nn.Parameter(torch.randn(apt_size, num_nodes), requires_grad=True)
-        # nodevecs = self.svd_init(apt_size, aptinit)
-        # self.nodevec1, self.nodevec2 = [
-        #     Parameter(n.to(device), requires_grad=True) for n in nodevecs]
 
         Conv1 += [
             nn.ReplicationPad2d((pad_l, pad_r, 0, 0)),
@@ -230,22 +143,9 @@ class IDGCN(nn.Module):
         self.conv3 = nn.Sequential(*Conv3)
         self.conv4 = nn.Sequential(*Conv4)
 
-        # self.a = nn.Parameter(torch.rand(1).to(
-        #     device=device), requires_grad=True).to(device)
-
-        # self.graph_generator = Graph_Generator(
-        #     device, channels, num_nodes)
-
         self.diffusion_conv = Diffusion_GCN(
             channels, channels, dropout, support_len=self.pre_adj_len)
 
-    # @staticmethod
-    # def svd_init(apt_size, aptinit):
-    #     m, p, n = torch.svd(aptinit)
-    #     nodevec1 = torch.mm(m[:, :apt_size], torch.diag(p[:apt_size] ** 0.5))   # 170 10
-    #     nodevec2 = torch.mm(torch.diag(
-    #         p[:apt_size] ** 0.5), n[:, :apt_size].t())      #10 170
-    #     return nodevec1, nodevec2
 
     def forward(self, x, adj):
         if self.splitting:
@@ -253,41 +153,24 @@ class IDGCN(nn.Module):
         else:
             (x_even, x_odd) = x
 
-        # adaptive_adj = F.softmax(
-        #     F.relu(torch.mm(self.nodevec1, self.nodevec2)), dim=1)
-        #             x
-        # xeven               xodd
-        #         x1      x2
-        #     c      dgcn     d
-        #         x3      x4
-        # xevenup             xoddup
 
         x1 = self.conv1(x_even) #64 64 170 6
-        # learn_adj = self.graph_generator(x1, adaptive_adj)
-        # dadj = learn_adj*self.a+adaptive_adj*(1-self.a)
-        # dadj = adaptive_adj
-        dadj = adj
+
         x1 = x1+self.diffusion_conv(x1, dadj)
         d = x_odd.mul(torch.tanh(x1))
 
         x2 = self.conv2(x_odd)
-        # learn_adj = self.graph_generator(x2, adaptive_adj)
-        # dadj = learn_adj*self.a+adaptive_adj*(1-self.a)
-        #dadj = adaptive_adj
+
         x2 = x2+self.diffusion_conv(x2, dadj)
         c = x_even.mul(torch.tanh(x2))
 
         x3 = self.conv3(c)
-        # learn_adj = self.graph_generator(x3, adaptive_adj)
-        # dadj = learn_adj*self.a+adaptive_adj*(1-self.a)
-        #dadj = adaptive_adj
+
         x3 = x3+self.diffusion_conv(x3, dadj)
         x_odd_update = d - x3 # Either "+" or "-" here does not have much effect on the results.
 
         x4 = self.conv4(d)
-        # learn_adj = self.graph_generator(x4, adaptive_adj)
-        # dadj = learn_adj*self.a+adaptive_adj*(1-self.a)
-        #dadj = adaptive_adj
+
         x4 = x4+self.diffusion_conv(x4, dadj)
         x_even_update = c + x4 # Either "+" or "-" here does not have much effect on the results.
 
@@ -401,14 +284,7 @@ class STIDGCN(nn.Module):
         self.graph_construct = graph_constructor2(num_nodes, apt_size, device, self.input_len, eta=1, in_dim=1,
                                                  gamma=0.001, dropout=0.5, m=0.9, batch_size=32)
         self.depth = 1
-    # @staticmethod
-    # def svd_init(apt_size, aptinit):
-    #     m, p, n = torch.svd(aptinit)
-    #     nodevec1 = torch.mm(m[:, :apt_size], torch.diag(p[:apt_size] ** 0.5)) # 170 10
-    #     nodevec2 = torch.mm(torch.diag(               #10 170
-    #         p[:apt_size] ** 0.5), n[:, :apt_size].t())
-    #     return nodevec1, nodevec2
-        #在这里加归一化 b, s, f means b, f
+
 
     def forward(self, input):
         x = input #64 1 170 12
@@ -433,12 +309,7 @@ class STIDGCN(nn.Module):
             skip = x
             x, dadj = self.tree(x, dynamic_adj)
             x = skip + x
-        # adj = self.a*adaptive_adj+(1-self.a)*dadj
-        # adj = self.pre_graph + [adj]
 
-        # gcn = self.diffusion_conv(x, adj)
-
-        # x = gcn + x
 
         x = F.relu(self.Conv1(x))
         x = F.relu(self.Conv2(x))
